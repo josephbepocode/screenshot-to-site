@@ -1,0 +1,81 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pixel2Page | Screenshot to website with on-device vision AI</title><meta name="description" content="Upload a UI screenshot. A local vision model (SmolVLM) reads it and generates HTML and CSS with a live preview.">
+<style>
+:root{--bg:#fbf8f3;--ink:#16130f;--m:#6f675c;--a:#ff5a36;--l:#e6dfd3;--p:#fff}
+*{box-sizing:border-box}body{margin:0;font:15px/1.55 ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:26px 30px 10px;display:flex;justify-content:space-between;align-items:end;flex-wrap:wrap;gap:12px}
+h1{margin:0;font:800 2.1rem/1 Georgia,serif;letter-spacing:-1px}h1 span{color:var(--a)}header p{margin:6px 0 0;color:var(--m);max-width:620px}
+main{display:grid;grid-template-columns:1fr 1.25fr;gap:20px;padding:16px 30px 30px}
+.card{background:var(--p);border:1px solid var(--l);border-radius:18px;padding:16px;box-shadow:0 8px 30px #0000000a}
+.drop{border:2px dashed var(--l);border-radius:14px;min-height:260px;display:grid;place-items:center;text-align:center;cursor:pointer;overflow:hidden;position:relative;background:#fdfbf8}
+.drop.over{border-color:var(--a);background:#fff3ef}.drop img{max-width:100%;max-height:360px;display:block}.drop:focus-visible{outline:3px solid var(--a)}
+button{font:inherit;font-weight:700;padding:10px 16px;border-radius:12px;border:0;background:var(--ink);color:#fff;cursor:pointer}button.alt{background:#fff;color:var(--ink);border:1px solid var(--l)}button:disabled{opacity:.45}
+button:focus-visible{outline:3px solid var(--a);outline-offset:2px}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.st{margin-top:12px;font-size:.88rem;color:var(--m);min-height:1.4em}.bar{height:6px;background:#efe9df;border-radius:9px;overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;width:0;background:var(--a);transition:width .2s}
+h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.1em;color:var(--m);margin:16px 0 6px}
+#desc{white-space:pre-wrap;font:12.5px/1.5 ui-monospace,monospace;background:#faf6ef;border:1px solid var(--l);border-radius:12px;padding:10px;max-height:180px;overflow:auto;margin:0}
+.pal{display:flex;gap:6px}.pal span{flex:1;height:30px;border-radius:8px;border:1px solid #0001}
+.tabs{display:flex;gap:6px;margin-bottom:10px}.tabs button[aria-selected=false]{background:#fff;color:var(--m);border:1px solid var(--l)}
+iframe{width:100%;height:600px;border:1px solid var(--l);border-radius:14px;background:#fff}#code{height:600px;overflow:auto;margin:0;background:#16130f;color:#f5e9d8;border-radius:14px;padding:14px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap}
+footer{text-align:center;color:var(--m);font-size:.8rem;padding:0 0 24px}
+@media(max-width:920px){main{grid-template-columns:1fr;padding:14px}}
+</style></head><body>
+<header><div><h1>Pixel<span>2</span>Page</h1><p>Drop in a screenshot of a website or app. SmolVLM, a tiny vision language model, reads it on your device while a layout analyser measures sections and colours. Together they produce editable HTML and CSS.</p></div></header>
+<main><section class="card" aria-label="Input">
+<div class="drop" id="drop" tabindex="0" role="button" aria-label="Upload a screenshot. Click or drop an image here."><div id="ph"><b>Click or drop a screenshot</b><br><small style="color:var(--m)">PNG or JPG, stays on your device</small></div></div>
+<input type="file" id="file" accept="image/*" hidden>
+<div class="btns"><button id="go" disabled>Generate website</button><button class="alt" id="sample">Use sample screenshot</button></div>
+<div class="st" id="st" aria-live="polite">Model: SmolVLM 256M Instruct (about 250 MB, cached after first run).</div><div class="bar" aria-hidden="true"><i id="pg"></i></div>
+<h2>Detected palette</h2><div class="pal" id="pal"></div>
+<h2>What the model sees</h2><pre id="desc">Waiting for an image.</pre>
+</section>
+<section class="card" aria-label="Output"><div class="tabs" role="tablist"><button role="tab" id="t1" aria-selected="true">Preview</button><button role="tab" id="t2" aria-selected="false">HTML</button><button class="alt" id="dl" style="margin-left:auto">Download</button></div>
+<iframe id="fr" title="Generated website preview" sandbox></iframe><pre id="code" hidden></pre></section></main>
+<footer>Built by Deji · transformers.js + SmolVLM. Small models make mistakes, treat output as a starting point.</footer>
+<script type="module">
+const $=id=>document.getElementById(id);let img=null,T,proc,model,out='';const dev=navigator.gpu?'webgpu':'wasm';
+const files={};const prog=p=>{if(p.status==='progress'&&p.total){files[p.file]=[p.loaded,p.total];const v=Object.values(files);$('pg').style.width=v.reduce((a,b)=>a+b[0],0)/v.reduce((a,b)=>a+b[1],0)*100+'%'}};
+function setImg(src){img=new Image();img.onload=()=>{$('drop').innerHTML='';$('drop').append(img);$('go').disabled=false;analyse()};img.src=src}
+$('drop').onclick=()=>$('file').click();$('drop').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('file').click()}};
+$('file').onchange=e=>e.target.files[0]&&setImg(URL.createObjectURL(e.target.files[0]));
+['dragover','dragleave','drop'].forEach(ev=>$('drop').addEventListener(ev,e=>{e.preventDefault();$('drop').classList.toggle('over',ev==='dragover');if(ev==='drop'&&e.dataTransfer.files[0])setImg(URL.createObjectURL(e.dataTransfer.files[0]))}));
+$('sample').onclick=()=>{const c=document.createElement('canvas');c.width=1200;c.height=800;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,1200,800);
+x.fillStyle='#111827';x.fillRect(0,0,1200,70);x.fillStyle='#fff';x.font='bold 28px sans-serif';x.fillText('Northwind',40,45);x.font='18px sans-serif';['Features','Pricing','About'].forEach((t,i)=>x.fillText(t,820+i*110,44));
+const g=x.createLinearGradient(0,70,1200,420);g.addColorStop(0,'#6d28d9');g.addColorStop(1,'#db2777');x.fillStyle=g;x.fillRect(0,70,1200,350);x.fillStyle='#fff';x.font='bold 56px sans-serif';x.fillText('Ship faster with Northwind',40,210);x.font='24px sans-serif';x.fillText('The delivery platform for modern teams.',40,260);
+x.fillStyle='#fbbf24';x.beginPath();x.roundRect(40,300,200,56,12);x.fill();x.fillStyle='#111';x.font='bold 22px sans-serif';x.fillText('Get started',75,336);
+['Fast','Secure','Global'].forEach((t,i)=>{x.fillStyle='#f3f4f6';x.beginPath();x.roundRect(40+i*380,470,340,220,16);x.fill();x.fillStyle='#111827';x.font='bold 28px sans-serif';x.fillText(t,70+i*380,530);x.fillStyle='#6b7280';x.font='18px sans-serif';x.fillText('Lorem ipsum feature text',70+i*380,570)});
+x.fillStyle='#111827';x.fillRect(0,740,1200,60);x.fillStyle='#9ca3af';x.font='16px sans-serif';x.fillText('© Northwind Inc.',40,776);setImg(c.toDataURL())};
+const hex=(r,g,b)=>'#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join(''),lum=([r,g,b])=>(r*299+g*587+b*114)/1000;
+let bands=[],palette=[];
+function analyse(){const w=96,h=Math.round(img.naturalHeight/img.naturalWidth*96),c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.drawImage(img,0,0,w,h);const d=x.getImageData(0,0,w,h).data;
+const cnt={};for(let i=0;i<d.length;i+=4){const k=[d[i]>>5,d[i+1]>>5,d[i+2]>>5].join();cnt[k]=(cnt[k]||0)+1}
+palette=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k])=>k.split(',').map(v=>v*32+16));$('pal').innerHTML=palette.map(p=>`<span style="background:${hex(...p)}" title="${hex(...p)}"></span>`).join('');
+const rows=[];for(let y=0;y<h;y++){let r=0,g=0,b=0;for(let X=0;X<w;X++){const i=(y*w+X)*4;r+=d[i];g+=d[i+1];b+=d[i+2]}rows.push([r/w|0,g/w|0,b/w|0])}
+bands=[];let s=0;for(let y=1;y<=h;y++){const a=rows[y-1],b=rows[y];if(y===h||Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])+Math.abs(a[2]-b[2])>40){if(y-s>=2)bands.push({h:(y-s)/h,c:rows[Math.floor((s+y)/2)]});s=y}}
+const m=[];bands.forEach(b=>{const l=m.at(-1);if(l&&Math.abs(lum(l.c)-lum(b.c))<20)l.h+=b.h;else m.push({...b})});bands=m.slice(0,8)}
+async function load(){if(model)return;$('st').textContent='Loading transformers.js...';T=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.1');const id='HuggingFaceTB/SmolVLM-256M-Instruct';
+$('st').textContent='Downloading SmolVLM ('+dev.toUpperCase()+')...';proc=await T.AutoProcessor.from_pretrained(id,{progress_callback:prog});
+model=await T.AutoModelForVision2Seq.from_pretrained(id,{device:dev,dtype:dev==='webgpu'?{embed_tokens:'fp16',vision_encoder:'q4',decoder_model_merged:'q4'}:{embed_tokens:'fp32',vision_encoder:'q8',decoder_model_merged:'q8'},progress_callback:prog})}
+async function ask(q,max=220){const im=await T.RawImage.fromURL(img.src);const msgs=[{role:'user',content:[{type:'image'},{type:'text',text:q}]}];const text=proc.apply_chat_template(msgs,{add_generation_prompt:true});
+const inp=await proc(text,[im],{do_image_splitting:false});const o=await model.generate({...inp,max_new_tokens:max,do_sample:false,repetition_penalty:1.15});return proc.batch_decode(o.slice(null,[inp.input_ids.dims.at(-1),null]),{skip_special_tokens:true})[0].trim()}
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function build(desc,title,head){const accent=palette.map(p=>({p,s:Math.max(...p)-Math.min(...p)})).sort((a,b)=>b.s-a.s)[0]?.p||[255,90,54];const A=hex(...accent);
+const sents=desc.split(/(?<=[.!?])\s+/).filter(s=>s.length>3);let si=0;const next=()=>esc(sents[si++%Math.max(sents.length,1)]||'Section content');
+const sec=bands.map((b,i)=>{const bg=hex(...b.c),fg=lum(b.c)>140?'#111':'#fff',px=Math.max(56,Math.round(b.h*900));
+if(i===0&&b.h<.14)return `<nav style="background:${bg};color:${fg}"><strong>${esc(title)}</strong><span>Home</span><span>Features</span><span>Contact</span></nav>`;
+if(i===bands.length-1&&b.h<.12)return `<footer style="background:${bg};color:${fg}">&copy; ${new Date().getFullYear()} ${esc(title)}</footer>`;
+if(b.h>.3)return `<section class="hero" style="background:${bg};color:${fg};min-height:${px}px"><h1>${esc(head)}</h1><p>${next()}</p><a class="btn" href="#">Get started</a></section>`;
+return `<section style="background:${bg};color:${fg};min-height:${px}px"><div class="grid"><article><h3>${next().split(' ').slice(0,3).join(' ')}</h3><p>${next()}</p></article><article><h3>Highlights</h3><p>${next()}</p></article><article><h3>Details</h3><p>${next()}</p></article></div></section>`}).join('\n');
+return `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>\n<style>\n:root{--accent:${A}}\nbody{margin:0;font-family:system-ui,sans-serif}\nnav{display:flex;gap:24px;align-items:center;padding:18px 32px}nav strong{margin-right:auto;font-size:1.3rem}\nsection{padding:48px 32px;display:flex;flex-direction:column;justify-content:center}\n.hero h1{font-size:clamp(2rem,5vw,3.4rem);margin:0 0 12px;max-width:16ch}.hero p{max-width:52ch;opacity:.9}\n.btn{align-self:flex-start;margin-top:16px;background:var(--accent);color:#fff;padding:12px 22px;border-radius:10px;text-decoration:none;font-weight:700}\n.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}article{padding:20px;border-radius:14px;background:#ffffff14;border:1px solid #8882}\nfooter{padding:22px 32px;font-size:.9rem}\n</style></head><body>\n${sec}\n</body></html>`}
+function show(h){out=h;$('fr').srcdoc=h;$('code').textContent=h}
+$('go').onclick=async()=>{$('go').disabled=true;try{await load();$('pg').style.width='100%';
+$('st').textContent='Reading the layout...';const desc=await ask('Describe this web page user interface in detail: list each section from top to bottom and quote any visible text.');$('desc').textContent=desc;
+$('st').textContent='Reading headline text...';const head=await ask('What is the main headline text on this page? Reply with only the headline.',30);
+const title=await ask('What is the brand or site name shown on this page? Reply with one or two words only.',12);
+show(build(desc,title.replace(/[."]/g,'')||'My Site',head.replace(/^"|"$/g,'')||'Welcome'));$('st').textContent='Done. Generated '+bands.length+' sections from the layout analysis and model reading.'}
+catch(e){$('st').textContent='Error: '+e.message}$('go').disabled=false};
+const tab=a=>{$('t1').setAttribute('aria-selected',a);$('t2').setAttribute('aria-selected',!a);$('fr').hidden=!a;$('code').hidden=a};$('t1').onclick=()=>tab(true);$('t2').onclick=()=>tab(false);
+$('dl').onclick=()=>{if(!out)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([out],{type:'text/html'}));a.download='pixel2page.html';a.click()};
+$('sample').click();$('fr').srcdoc='<body style="font-family:system-ui;display:grid;place-items:center;height:90vh;color:#6f675c">Your generated page will appear here.</body>';
+</script></body></html>
